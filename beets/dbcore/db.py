@@ -1235,7 +1235,14 @@ class Database:
         def regexp(value: Any, pattern: str) -> bool:
             if isinstance(value, bytes):
                 value = value.decode()
-            return re.search(pattern, str(value)) is not None
+            # Multi-valued fields (e.g. `genres`) are stored as one string
+            # joined with MULTI_VALUE_DELIMITER. Match each value separately
+            # so anchors like `^` and `$` behave the same as in the Python
+            # matching path (`StringFieldQuery.value_match`). See #6961.
+            return any(
+                re.search(pattern, v) is not None
+                for v in str(value).split(types.MULTI_VALUE_DELIMITER)
+            )
 
         def bytelower(bytestring: AnyStr | None) -> AnyStr | None:
             """A custom ``bytelower`` sqlite function so we can compare
