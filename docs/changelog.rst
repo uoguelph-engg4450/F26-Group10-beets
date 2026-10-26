@@ -18,6 +18,9 @@ Bug fixes
 
 - Add ``alternatives.item_updated`` to the typed event list so
   :doc:`plugins/hook` can listen to it. :bug:`7036`
+- Regular expression queries on multi-valued fields such as ``genres`` now
+  match each value separately, so ``beet ls 'genres::^Electro$'`` finds tracks
+  whose genres include ``Electro``. :bug:`6961`
 
 ..
     For plugin developers

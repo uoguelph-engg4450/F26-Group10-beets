@@ -541,6 +541,56 @@ class TestDefaultSearchFields:
         assert bool(getattr(lib, entity)(q)) == should_match
 
 
+class TestMultiValueRegexpQuery:
+    """Regex queries on multi-valued fields match each value separately.
+
+    The SQL (fast) path and the Python (slow) path must agree. See #6961.
+    """
+
+    @pytest.fixture(scope="class")
+    def lib(self, helper):
+        helper.add_item(
+            title="multi", genres=["Electro", "Electroclash", "Synth-pop"]
+        )
+        helper.add_item(title="single", genres=["Electro"])
+        helper.add_item(title="empty", genres=[])
+
+        return helper.lib
+
+    @pytest.mark.parametrize("fast", [True, False], ids=["sql", "python"])
+    @pytest.mark.parametrize(
+        "field, pattern, expected_titles",
+        [
+            _p("genres", "^Electro$", {"multi", "single"}, id="anchored-first-value"),
+            _p("genres", "^Electroclash", {"multi"}, id="anchored-middle-value"),
+            _p("genres", "Synth-pop$", {"multi"}, id="anchored-last-value"),
+            _p("genres", "^Synth", {"multi"}, id="start-of-later-value"),
+            _p("genres", "Electro", {"multi", "single"}, id="unanchored"),
+            _p("genres", "^Techno$", set(), id="no-value-matches"),
+            _p("genres", "Electro; Electroclash", set(), id="no-cross-value-match"),
+            _p("title", "^multi$", {"multi"}, id="single-value-field"),
+            _p("title", "^(single|empty)$", {"single", "empty"}, id="single-value-alternation"),  # noqa: E501
+        ],
+    )  # fmt: skip
+    def test_match(self, lib, fast, field, pattern, expected_titles):
+        q = RegexpQuery(field, pattern, fast=fast)
+
+        assert {i.title for i in lib.items(q)} == expected_titles
+
+    @pytest.mark.parametrize(
+        "q, expected_titles",
+        [
+            _p("genres::^Electro$", {"multi", "single"}, id="exact-genre"),
+            _p("genres::^Electroclash", {"multi"}, id="genre-prefix"),
+            _p("genres::^Techno$", set(), id="no-match"),
+            _p("title::^multi$", {"multi"}, id="ordinary-field"),
+        ],
+    )
+    def test_query_string(self, lib, q, expected_titles):
+        """The command-line form from the bug report, e.g. `beet ls`."""
+        assert {i.title for i in lib.items(q)} == expected_titles
+
+
 class TestRelatedQueries:
     """Test album-level queries with track-level filters and vice-versa."""
 
