@@ -1,0 +1,145 @@
+# Acceptance Tests for the Phase 2 Change Requests
+
+ENGG\*4450, Group 10. SCRUM-79 (SCRUM-115, SCRUM-116, SCRUM-117). Author: Chizorom Anyalechi. Draft, October 26, 2026.
+
+These tests are written for someone with no developer help. Follow Part A once, then run Part B and Part C. Each test checks one flow from `use-cases.md`. Record the actual result, pass or fail, your name and the date for every test.
+
+## Part A: Setting up a fresh copy (SCRUM-115)
+
+You need Python 3.10 to 3.14 and Git. Check with `python --version` and `git --version`. On Windows, try `py --version` if `python` is not recognized. Part C must be run on macOS, Linux or WSL.
+
+**A1. Get the code.** Replace `<release-tag>` with the tag from SCRUM-81. Until that exists, use `main`.
+
+```
+git clone https://github.com/uoguelph-engg4450/F26-Group10-beets.git
+cd F26-Group10-beets
+git checkout <release-tag>
+```
+
+**A2. Create an isolated environment and install.**
+
+Windows (PowerShell):
+
+```
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -e .
+```
+
+macOS, Linux or WSL:
+
+```
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+```
+
+The `-e` flag installs our group's copy of the code, not the public release. If PowerShell refuses to run the activate script, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once and try again.
+
+**A3. Use a separate test library.** Create a folder named `acceptance` inside the repository, and in it a file named `config.yaml` containing:
+
+```
+directory: music
+library: library.db
+```
+
+These paths are read relative to the `acceptance` folder. Then point beets at it. Repeat this in every new terminal window.
+
+```
+Windows (PowerShell):    $env:BEETSDIR = "$PWD\acceptance"
+macOS, Linux or WSL:     export BEETSDIR="$PWD/acceptance"
+```
+
+**A4. Check the install.**
+
+| Command | Expected result |
+|---|---|
+| `beet version` | Prints `beets version 2.14.1` and the Python version, with no errors. |
+| `beet config -p` | Shows the path to `acceptance/config.yaml`. |
+
+To start over at any time, delete `acceptance/library.db` and the `acceptance/music` folder.
+
+## Part B: Genre regular expressions on tracks with several genres (UC-1, #6961)
+
+### B0. Setup for all Part B tests
+
+The sample songs all share the same title and artist, so first tell beets to keep them all instead of asking about duplicates. Add these two lines to `acceptance/config.yaml` (the second line is indented four spaces):
+
+```
+import:
+    duplicate_action: keep
+```
+
+Then run these from the repository folder. In Windows PowerShell and in macOS or Linux shells, keep the single quotes exactly as shown.
+
+```
+beet import -A -s test/rsrc/full.mp3
+beet import -A -s test/rsrc/full.flac
+beet import -A -s test/rsrc/date.mp3
+beet modify -y id:1 'genres=Electro; House'
+beet modify -y id:2 'genres=Electro'
+beet modify -y id:3 'genres=Electro House'
+beet ls -f '$id: $genres'
+```
+
+`-A` imports without looking songs up online, and `-s` imports each file as a single track. The last command should print:
+
+```
+1: Electro; House
+2: Electro
+3: Electro House
+```
+
+Track 1 has two genres, track 2 has one, and track 3 has one genre that only contains the word Electro. If the output differs, stop and report it before running the tests.
+
+### Tests
+
+| ID | Covers | Steps | Expected result |
+|---|---|---|---|
+| AT-1.1 | Main flow | `beet ls -f '$id: $genres' 'genres::^Electro$'` | Lists tracks **1 and 2**, and not track 3. Before the fix, only track 2 is listed. |
+| AT-1.2 | Main flow, second genre | `beet ls -f '$id: $genres' 'genres::^House$'` | Lists track **1** only. Before the fix, nothing is listed. |
+| AT-1.3 | Alternate 3b, unanchored | `beet ls -f '$id: $genres' 'genres::Electro'` | Lists tracks **1, 2 and 3**, the same as before the fix. |
+| AT-1.4 | Alternate 4a, no match | `beet ls -f '$id: $genres' 'genres::^Techno$'` | Prints nothing and returns to the prompt with no error. |
+| AT-1.5 | Error E1, invalid expression | `beet ls 'genres::['` | Prints one line starting `invalid query:` that says `'['` is not a regular expression. No traceback. |
+
+## Part C: Private login token files (UC-2, #6984)
+
+Run on macOS, Linux or WSL only. These tests need internet access.
+
+### C0. Setup for all Part C tests
+
+1. Complete Part A, including `BEETSDIR`.
+2. Add this line to `acceptance/config.yaml`:
+
+   ```
+   plugins: spotify
+   ```
+
+3. Make sure no token file exists yet:
+
+   ```
+   rm -f acceptance/spotify_token.json
+   ```
+
+### Tests
+
+| ID | Covers | Steps | Expected result |
+|---|---|---|---|
+| AT-2.1 | Main flow | 1. `beet version`<br>2. `ls -l acceptance/spotify_token.json` | Step 1 prints the version with no errors. Step 2 shows the file with permissions `-rw-------`. Before the fix, it shows `-rw-r--r--`. |
+| AT-2.2 | Alternate 2a, token reused | 1. Complete AT-2.1.<br>2. `ls -l --time-style=full-iso acceptance/spotify_token.json` (on macOS use `ls -lT`), and note the time.<br>3. `beet version`<br>4. Repeat step 2. | Step 3 runs with no errors. In step 4 the permissions are still `-rw-------` and the time has not changed, showing the saved token was reused. |
+| AT-2.3 | Alternate 4a, loose default permissions | 1. `rm -f acceptance/spotify_token.json`<br>2. `(umask 000; beet version)`<br>3. `ls -l acceptance/spotify_token.json` | The file is still `-rw-------`. Before the fix, it is `-rw-rw-rw-`. |
+| AT-2.4 | Error E1, rejected login | 1. `rm -f acceptance/spotify_token.json`<br>2. Add `spotify:` and, indented under it, `client_secret: wrong` to `acceptance/config.yaml`.<br>3. `beet version`<br>4. `ls acceptance/spotify_token.json`<br>5. Remove the two lines added in step 2. | Step 3 prints a warning starting `** error loading plugin spotify` that includes `Spotify authorization failed`, then still prints the version. Step 4 reports that the file does not exist. |
+
+## Results log
+
+| Test | Tester | Date | Actual result | Pass or fail |
+|---|---|---|---|---|
+| AT-1.1 | | | | |
+| AT-1.2 | | | | |
+| AT-1.3 | | | | |
+| AT-1.4 | | | | |
+| AT-1.5 | | | | |
+| AT-2.1 | | | | |
+| AT-2.2 | | | | |
+| AT-2.3 | | | | |
+| AT-2.4 | | | | |
