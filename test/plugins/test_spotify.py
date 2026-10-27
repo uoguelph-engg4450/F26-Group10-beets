@@ -1,6 +1,9 @@
 """Tests for the 'spotify' plugin"""
 
 import json
+import os
+import stat
+from unittest.mock import Mock, patch
 from urllib.parse import parse_qs, urlparse
 
 import responses
@@ -54,6 +57,31 @@ class SpotifyPluginTest(PluginTestCase):
 
     def test_empty_query(self):
         assert self.spotify._match_library_tracks(self.lib, "1=2") is None
+
+    def test_authentication_saves_private_token_and_setup_loads_it(self):
+        token_path = self.temp_path / "spotify-token.json"
+        token = "fake-spotify-token"
+        self.spotify.config["client_id"].set("fake-client-id")
+        self.spotify.config["client_secret"].set("fake-client-secret")
+        self.spotify._tokenfile = lambda: str(token_path)
+        response = Mock()
+        response.json.return_value = {"access_token": token}
+        response.raise_for_status.return_value = None
+
+        with patch.object(spotify.requests, "post", return_value=response):
+            self.spotify._authenticate()
+
+        assert json.loads(token_path.read_text()) == {"access_token": token}
+        if os.name == "posix":
+            assert stat.S_IMODE(token_path.stat().st_mode) == 0o600
+
+            token_path.chmod(0o644)
+            with patch.object(spotify.requests, "post", return_value=response):
+                self.spotify._authenticate()
+            assert stat.S_IMODE(token_path.stat().st_mode) == 0o600
+
+        self.spotify.setup()
+        assert self.spotify.access_token == token
 
     @responses.activate
     def test_missing_request(self):

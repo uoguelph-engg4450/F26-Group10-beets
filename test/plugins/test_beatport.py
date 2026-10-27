@@ -1,7 +1,11 @@
 """Tests for the 'beatport' plugin."""
 
+import json
+import os
+import stat
 import unittest
 from datetime import timedelta
+from unittest.mock import patch
 
 from beets.test import _common
 from beets.test.helper import BeetsTestCase
@@ -9,6 +13,54 @@ from beetsplug import beatport
 
 
 class BeatportTest(BeetsTestCase):
+    def test_authentication_saves_private_token_and_setup_loads_it(self):
+        token_path = self.temp_path / "beatport-token.json"
+        token = "fake-beatport-token"
+        secret = "fake-beatport-secret"
+        fake_key = "fake-client-key"
+        fake_secret = "fake-client-secret"
+
+        with patch.object(beatport.BeatportPlugin, "setup"):
+            plugin = beatport.BeatportPlugin()
+        plugin.config["apikey"].set(fake_key)
+        plugin.config["apisecret"].set(fake_secret)
+        plugin._tokenfile = lambda: str(token_path)
+
+        with (
+            patch.object(beatport, "BeatportClient") as auth_client,
+            patch.object(beatport.beets.ui, "print_"),
+            patch.object(
+                beatport.beets.ui, "input_", return_value="fake-verifier"
+            ),
+        ):
+            auth_client.return_value.get_authorize_url.return_value = (
+                "https://example.test/authorize"
+            )
+            auth_client.return_value.get_access_token.return_value = (
+                token,
+                secret,
+            )
+            assert plugin.authenticate(fake_key, fake_secret) == (
+                token,
+                secret,
+            )
+            assert json.loads(token_path.read_text()) == {
+                "token": token,
+                "secret": secret,
+            }
+            if os.name == "posix":
+                assert stat.S_IMODE(token_path.stat().st_mode) == 0o600
+
+                token_path.chmod(0o644)
+                plugin.authenticate(fake_key, fake_secret)
+                assert stat.S_IMODE(token_path.stat().st_mode) == 0o600
+
+        with patch.object(beatport, "BeatportClient") as client_class:
+            plugin.setup()
+        client_class.assert_called_once_with(
+            fake_key, fake_secret, token, secret
+        )
+
     def _make_release_response(self):
         """Returns a dict that mimics a response from the beatport API.
 

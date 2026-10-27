@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Literal, overload
@@ -359,8 +360,15 @@ class BeatportPlugin(MetadataSourcePlugin):
             raise UserError("Beatport token request failed")
 
         # Save the token for later use.
-        self._log.debug("Beatport token {}, secret {}", token, secret)
-        with open(self._tokenfile(), "w") as f:
+        self._log.debug("Saving Beatport authentication token")
+        fd = os.open(
+            self._tokenfile(),
+            os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+            0o600,
+        )
+        with os.fdopen(fd, "w") as f:
+            if os.name == "posix":
+                os.fchmod(f.fileno(), 0o600)
             json.dump({"token": token, "secret": secret}, f)
 
         return token, secret

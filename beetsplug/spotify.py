@@ -8,6 +8,7 @@ from __future__ import annotations
 import base64
 import collections
 import json
+import os
 import re
 import threading
 import time
@@ -217,8 +218,15 @@ class SpotifyPlugin(
         self.access_token = response.json()["access_token"]
 
         # Save the token for later use.
-        self._log.debug("{0.data_source} access token: {0.access_token}", self)
-        with open(self._tokenfile(), "w") as f:
+        self._log.debug("Saving authentication token")
+        fd = os.open(
+            self._tokenfile(),
+            os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+            0o600,
+        )
+        with os.fdopen(fd, "w") as f:
+            if os.name == "posix":
+                os.fchmod(f.fileno(), 0o600)
             json.dump({"access_token": self.access_token}, f)
 
     def _handle_response(
