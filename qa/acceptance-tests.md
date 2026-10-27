@@ -22,7 +22,7 @@ Windows (PowerShell):
 
 ```
 python -m venv .venv
-.venv\Scripts\Activate.ps1
+.\.venv\Scripts\Activate.ps1
 pip install -e .
 ```
 
@@ -34,7 +34,9 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-The `-e` flag installs our group's copy of the code, not the public release. If PowerShell refuses to run the activate script, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once and try again.
+On Windows, use the standard Python from python.org (the `py` launcher comes with it). If `python -m venv` creates `.venv\bin` instead of `.venv\Scripts`, that Python is an MSYS2 or MinGW build, and `pip install` will fail while building `jellyfish`. In that case delete `.venv` and recreate it with `py -m venv .venv`.
+
+Before running `pip install`, check that your prompt starts with `(.venv)`. If it does not, the environment is not active and beets would be installed into your main Python instead. The `-e` flag installs our group's copy of the code, not the public release. If PowerShell refuses to run the activate script, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once and try again.
 
 **A3. Use a separate test library.** Create a folder named `acceptance` inside the repository, and in it a file named `config.yaml` containing:
 
@@ -54,7 +56,7 @@ macOS, Linux or WSL:     export BEETSDIR="$PWD/acceptance"
 
 | Command | Expected result |
 |---|---|
-| `beet version` | Prints `beets version 2.14.1` and the Python version, with no errors. |
+| `beet version` | Prints `beets version 2.14.1`, the Python version and `plugins: musicbrainz`, with no errors. The first run also prints several `Created database backup at: ...` lines while beets sets up the new library. These are normal and only appear once. |
 | `beet config -p` | Shows the path to `acceptance/config.yaml`. |
 
 To start over at any time, delete `acceptance/library.db` and the `acceptance/music` folder.
@@ -142,11 +144,11 @@ Run on macOS, Linux or WSL only. These tests need internet access.
 
 | Test | Tester | Date | Actual result | Pass or fail |
 |---|---|---|---|---|
-| AT-1.1 | | | | |
-| AT-1.2 | | | | |
-| AT-1.3 | | | | |
-| AT-1.4 | | | | |
-| AT-1.5 | | | | |
+| AT-1.1 | Chizorom Anyalechi | 2026-10-27 | Listed tracks 1 and 2 | Pass |
+| AT-1.2 | Chizorom Anyalechi | 2026-10-27 | Listed track 1 | Pass |
+| AT-1.3 | Chizorom Anyalechi | 2026-10-27 | Listed tracks 1, 2 and 3 | Pass |
+| AT-1.4 | Chizorom Anyalechi | 2026-10-27 | Printed nothing, no error | Pass |
+| AT-1.5 | Chizorom Anyalechi | 2026-10-27 | `invalid query: 'genres::[': '[' is not a regular expression: unterminated character set at position 0`, no traceback | Pass |
 | AT-2.1 | | | | |
 | AT-2.2 | | | | |
 | AT-2.3 | | | | |
