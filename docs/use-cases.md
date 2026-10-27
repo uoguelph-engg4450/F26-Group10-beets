@@ -1,6 +1,6 @@
 # Use Case Descriptions for the Phase 2 Change Requests
 
-ENGG\*4450, Group 10. SCRUM-74 (SCRUM-98, SCRUM-99). Author: Chizorom Anyalechi. Draft, October 26, 2026.
+ENGG\*4450, Group 10. SCRUM-74 (SCRUM-98, SCRUM-99). Author: Chizorom Anyalechi. Updated October 27, 2026, to match the merged fixes.
 
 These descriptions cover the two items selected in SCRUM-75. Each acceptance test in `acceptance-tests.md` checks one flow from these descriptions.
 
@@ -8,7 +8,7 @@ These descriptions cover the two items selected in SCRUM-75. Each acceptance tes
 
 | | |
 |---|---|
-| **GitHub issue** | [beetbox/beets#6961](https://github.com/beetbox/beets/issues/6961). Jira: SCRUM-76 or SCRUM-77, depending on the final owner list. |
+| **GitHub issue** | [beetbox/beets#6961](https://github.com/beetbox/beets/issues/6961). Jira: SCRUM-76. Implemented by Ali Meski in PR #2. |
 | **Primary actor** | Beets user |
 | **Secondary actor** | None. The query runs only against the local library database. |
 | **Goal** | List every track that has a given genre, even when that track also has other genres. |
@@ -41,17 +41,18 @@ These descriptions cover the two items selected in SCRUM-75. Each acceptance tes
 **Notes**
 
 - Cause found in the code: multiple genres are stored as one string joined by a hidden separator (`beets/dbcore/types.py`, `DelimitedString`), and the `regexp` database function (`beets/dbcore/db.py`) runs the expression against that whole string. An anchored expression therefore fails whenever a track has a second genre.
-- Assumption to confirm with the implementer: the fix matches the expression against each genre separately, as described in the main flow.
+- Confirmed by the implementer (PR #2): `regexp()` now splits the stored value on the multi-value separator and matches each value separately.
+- The fix applies to every multi-valued field, not only `genres` (for example `artists` and `composers`). Single-value fields behave exactly as before.
 
 ## UC-2: Keep a metadata source login token private
 
 | | |
 |---|---|
-| **GitHub issue** | [beetbox/beets#6984](https://github.com/beetbox/beets/issues/6984). Jira: SCRUM-76 or SCRUM-77, depending on the final owner list. |
+| **GitHub issue** | [beetbox/beets#6984](https://github.com/beetbox/beets/issues/6984). Jira: SCRUM-77. Implemented by Khaleed Jimoh in PR #3. |
 | **Primary actor** | Beets user on a computer shared with other user accounts |
 | **Secondary actors** | The online metadata service (Spotify in the tests) and the operating system's file system |
-| **Goal** | When beets saves a login token for an online service, only the user who owns it can read the token file. |
-| **Preconditions** | Beets is installed on macOS or Linux. A plugin that saves a token is enabled (Spotify in the tests). The computer has internet access. No token file exists yet. |
+| **Goal** | When beets saves a login token for an online service, only the user who owns it can read the token file, and the token never appears in beets' debug output. |
+| **Preconditions** | Beets is installed on macOS or Linux. The Spotify or Beatport plugin is enabled (Spotify in the tests). The computer has internet access. No token file exists yet. |
 | **Trigger** | The user runs any beets command, which loads the plugin and makes it log in to the service. |
 
 **Main flow**
@@ -60,11 +61,13 @@ These descriptions cover the two items selected in SCRUM-75. Each acceptance tes
 2. The plugin finds no saved token and requests a new one from the service.
 3. The service returns a token.
 4. Beets writes the token to the plugin's token file in the beets configuration folder, readable and writable only by the owner (permissions `600`, shown as `-rw-------`).
-5. The command finishes normally.
+5. Beets does not print the token, even when run with `-v` for debug output.
+6. The command finishes normally.
 
 **Alternate flows**
 
 - **2a. A token file already exists.** The plugin reads the saved token and skips steps 3 and 4. The file and its permissions are unchanged.
+- **2b. A saved token has expired.** The service rejects it, the plugin requests a new token, and beets saves it over the old file. If the old file was readable by others (for example one saved before the fix), beets tightens it to `600`.
 - **4a. The user's default file permissions are looser than usual** (for example `umask 000`). Beets still creates the token file as owner-only.
 
 **Error flows**
@@ -75,10 +78,12 @@ These descriptions cover the two items selected in SCRUM-75. Each acceptance tes
 
 - The token file exists with owner-only permissions (`600`).
 - Other user accounts on the same computer cannot read the token.
+- The token does not appear in any output, including debug output.
 - The plugin works the same as before the fix.
 
 **Notes**
 
-- Cause found in the code: plugins save tokens with a plain `open(path, "w")`, so the file gets the system's default permissions, usually `644` (readable by everyone). This affects the Spotify, Beatport, Discogs, Tidal and Plex plugins.
-- To confirm with the implementer: which plugins #6984 covers. The tests use Spotify because it logs in automatically with built-in credentials and needs no account. If the fix targets a different plugin, swap the plugin name and token file name in the tests.
+- Cause found in the code: plugins saved tokens with a plain `open(path, "w")`, so the file got the system's default permissions, usually `644` (readable by everyone). The Spotify plugin also printed the full token in its debug output.
+- Confirmed by the implementer (PR #3): the fix covers the Spotify and Beatport plugins. It creates token files as `600`, tightens existing files when they are saved, keeps reading saved tokens, and removes tokens and the Beatport secret from debug output.
+- The acceptance tests use Spotify because it logs in automatically with built-in credentials. Beatport needs a user account, so its behaviour is covered by the implementer's automated tests instead.
 - Windows does not use these permission bits, so UC-2 is tested on macOS, Linux or WSL only.

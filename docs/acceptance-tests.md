@@ -1,6 +1,6 @@
 # Acceptance Tests for the Phase 2 Change Requests
 
-ENGG\*4450, Group 10. SCRUM-79 (SCRUM-115, SCRUM-116, SCRUM-117). Author: Chizorom Anyalechi. Draft, October 26, 2026.
+ENGG\*4450, Group 10. SCRUM-79 (SCRUM-115, SCRUM-116, SCRUM-117). Author: Chizorom Anyalechi. Updated October 27, 2026, to match the merged fixes (PR #2 and PR #3).
 
 These tests are written for someone with no developer help. Follow Part A once, then run Part B and Part C. Each test checks one flow from `use-cases.md`. Record the actual result, pass or fail, your name and the date for every test.
 
@@ -115,7 +115,13 @@ Run on macOS, Linux or WSL only. These tests need internet access.
    plugins: spotify
    ```
 
-3. Make sure no token file exists yet:
+3. If you did not run Part B, import one track so the library is not empty (needed for AT-2.6):
+
+   ```
+   beet import -A -s test/rsrc/full.mp3
+   ```
+
+4. Make sure no token file exists yet:
 
    ```
    rm -f acceptance/spotify_token.json
@@ -129,6 +135,8 @@ Run on macOS, Linux or WSL only. These tests need internet access.
 | AT-2.2 | Alternate 2a, token reused | 1. Complete AT-2.1.<br>2. `ls -l --time-style=full-iso acceptance/spotify_token.json` (on macOS use `ls -lT`), and note the time.<br>3. `beet version`<br>4. Repeat step 2. | Step 3 runs with no errors. In step 4 the permissions are still `-rw-------` and the time has not changed, showing the saved token was reused. |
 | AT-2.3 | Alternate 4a, loose default permissions | 1. `rm -f acceptance/spotify_token.json`<br>2. `(umask 000; beet version)`<br>3. `ls -l acceptance/spotify_token.json` | The file is still `-rw-------`. Before the fix, it is `-rw-rw-rw-`. |
 | AT-2.4 | Error E1, rejected login | 1. `rm -f acceptance/spotify_token.json`<br>2. Add `spotify:` and, indented under it, `client_secret: wrong` to `acceptance/config.yaml`.<br>3. `beet version`<br>4. `ls acceptance/spotify_token.json`<br>5. Remove the two lines added in step 2. | Step 3 prints a warning starting `** error loading plugin spotify` that includes `Spotify authorization failed`, then still prints the version. Step 4 reports that the file does not exist. |
+| AT-2.5 | Main flow step 5, token kept out of debug output | 1. `rm -f acceptance/spotify_token.json`<br>2. `beet -v version > acceptance/debug.log 2>&1`<br>3. `TOKEN=$(python -c "import json; print(json.load(open('acceptance/spotify_token.json'))['access_token'])")`<br>4. `grep -c -F "$TOKEN" acceptance/debug.log` | Step 2 prints nothing to the screen (the output goes to the log file). Step 4 prints `0`: the new token appears nowhere in the debug output. Before the fix, it prints `1`, because the debug output included a line `Spotify access token: ...`. |
+| AT-2.6 | Alternate 2b, expired token saved before the fix | 1. `echo '{"access_token": "expired"}' > acceptance/spotify_token.json`<br>2. `chmod 644 acceptance/spotify_token.json`<br>3. `beet spotify`<br>4. `ls -l acceptance/spotify_token.json`<br>5. `cat acceptance/spotify_token.json` | Step 3 finishes without a traceback (it may list tracks it did or did not find on Spotify). Step 4 shows `-rw-------`. Step 5 shows a new token instead of `expired`, proving the file was re-saved. Before the fix, step 4 still shows `-rw-r--r--`. |
 
 ## Results log
 
@@ -143,3 +151,5 @@ Run on macOS, Linux or WSL only. These tests need internet access.
 | AT-2.2 | | | | |
 | AT-2.3 | | | | |
 | AT-2.4 | | | | |
+| AT-2.5 | | | | |
+| AT-2.6 | | | | |
