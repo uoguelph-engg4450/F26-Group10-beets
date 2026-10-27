@@ -362,9 +362,7 @@ class BeatportPlugin(MetadataSourcePlugin):
         # Save the token for later use.
         self._log.debug("Saving Beatport authentication token")
         fd = os.open(
-            self._tokenfile(),
-            os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
-            0o600,
+            self._tokenfile(), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600
         )
         with os.fdopen(fd, "w") as f:
             if os.name == "posix":

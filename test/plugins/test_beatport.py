@@ -40,10 +40,7 @@ class BeatportTest(BeetsTestCase):
                 token,
                 secret,
             )
-            assert plugin.authenticate(fake_key, fake_secret) == (
-                token,
-                secret,
-            )
+            assert plugin.authenticate(fake_key, fake_secret) == (token, secret)
             assert json.loads(token_path.read_text()) == {
                 "token": token,
                 "secret": secret,
@@ -60,6 +57,28 @@ class BeatportTest(BeetsTestCase):
         client_class.assert_called_once_with(
             fake_key, fake_secret, token, secret
         )
+
+    def test_authentication_does_not_log_token_or_secret(self):
+        with patch.object(beatport.BeatportPlugin, "setup"):
+            plugin = beatport.BeatportPlugin()
+        token_path = self.temp_path / "beatport-token.json"
+        plugin._tokenfile = lambda: str(token_path)
+
+        with (
+            patch.object(beatport, "BeatportClient") as auth_client,
+            patch.object(beatport.beets.ui, "print_"),
+            patch.object(beatport.beets.ui, "input_", return_value="verifier"),
+            self.assertLogs("beets.beatport", level="DEBUG") as logs,
+        ):
+            auth_client.return_value.get_access_token.return_value = (
+                "fake-beatport-token",
+                "fake-beatport-secret",
+            )
+            plugin.authenticate("fake-key", "fake-secret")
+
+        output = "\n".join(logs.output)
+        assert "fake-beatport-token" not in output
+        assert "fake-beatport-secret" not in output
 
     def _make_release_response(self):
         """Returns a dict that mimics a response from the beatport API.

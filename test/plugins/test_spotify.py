@@ -83,6 +83,20 @@ class SpotifyPluginTest(PluginTestCase):
         self.spotify.setup()
         assert self.spotify.access_token == token
 
+    def test_authentication_does_not_log_token(self):
+        response = Mock()
+        response.json.return_value = {"access_token": "fake-spotify-token"}
+        token_path = self.temp_path / "spotify-token.json"
+        self.spotify._tokenfile = lambda: str(token_path)
+
+        with (
+            patch.object(spotify.requests, "post", return_value=response),
+            self.assertLogs("beets.spotify", level="DEBUG") as logs,
+        ):
+            self.spotify._authenticate()
+
+        assert "fake-spotify-token" not in "\n".join(logs.output)
+
     @responses.activate
     def test_missing_request(self):
         json_file = _common.RSRC / "spotify" / "missing_request.json"
