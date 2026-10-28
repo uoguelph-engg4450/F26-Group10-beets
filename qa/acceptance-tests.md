@@ -106,7 +106,7 @@ Track 1 has two genres, track 2 has one, and track 3 has one genre that only con
 
 ## Part C: Private login token files (UC-2, #6984)
 
-Run on macOS, Linux or WSL only. These tests need internet access.
+Run on macOS, Linux or WSL only. These tests need internet access. On WSL, work on a copy of the repository inside your Linux home folder (for example `~/beets-test`), not under `/mnt/c/...`. Files on the Windows drive do not show real Linux permissions, so the permission checks would give wrong results.
 
 ### C0. Setup for all Part C tests
 
@@ -136,7 +136,7 @@ Run on macOS, Linux or WSL only. These tests need internet access.
 | AT-2.1 | Main flow | 1. `beet version`<br>2. `ls -l acceptance/spotify_token.json` | Step 1 prints the version with no errors. Step 2 shows the file with permissions `-rw-------`. Before the fix, it shows `-rw-r--r--`. |
 | AT-2.2 | Alternate 2a, token reused | 1. Complete AT-2.1.<br>2. `ls -l --time-style=full-iso acceptance/spotify_token.json` (on macOS use `ls -lT`), and note the time.<br>3. `beet version`<br>4. Repeat step 2. | Step 3 runs with no errors. In step 4 the permissions are still `-rw-------` and the time has not changed, showing the saved token was reused. |
 | AT-2.3 | Alternate 4a, loose default permissions | 1. `rm -f acceptance/spotify_token.json`<br>2. `(umask 000; beet version)`<br>3. `ls -l acceptance/spotify_token.json` | The file is still `-rw-------`. Before the fix, it is `-rw-rw-rw-`. |
-| AT-2.4 | Error E1, rejected login | 1. `rm -f acceptance/spotify_token.json`<br>2. Add `spotify:` and, indented under it, `client_secret: wrong` to `acceptance/config.yaml`.<br>3. `beet version`<br>4. `ls acceptance/spotify_token.json`<br>5. Remove the two lines added in step 2. | Step 3 prints a warning starting `** error loading plugin spotify` that includes `Spotify authorization failed`, then still prints the version. Step 4 reports that the file does not exist. |
+| AT-2.4 | Error E1, rejected login | 1. `rm -f acceptance/spotify_token.json`<br>2. Add `spotify:` and, indented under it, `client_secret: wrong` to `acceptance/config.yaml`.<br>3. `beet version`<br>4. `ls acceptance/spotify_token.json`<br>5. Remove the two lines added in step 2. | Step 3 prints a warning starting `** error loading plugin spotify`, followed by beets' standard plugin error details, ending with `Spotify authorization failed: 400 Client Error ... Invalid client secret`. It then still prints the version. Step 4 reports that the file does not exist. |
 | AT-2.5 | Main flow step 5, token kept out of debug output | 1. `rm -f acceptance/spotify_token.json`<br>2. `beet -v version > acceptance/debug.log 2>&1`<br>3. `TOKEN=$(python -c "import json; print(json.load(open('acceptance/spotify_token.json'))['access_token'])")`<br>4. `grep -c -F "$TOKEN" acceptance/debug.log` | Step 2 prints nothing to the screen (the output goes to the log file). Step 4 prints `0`: the new token appears nowhere in the debug output. Before the fix, it prints `1`, because the debug output included a line `Spotify access token: ...`. |
 | AT-2.6 | Alternate 2b, expired token saved before the fix | 1. `echo '{"access_token": "expired"}' > acceptance/spotify_token.json`<br>2. `chmod 644 acceptance/spotify_token.json`<br>3. `beet spotify`<br>4. `ls -l acceptance/spotify_token.json`<br>5. `cat acceptance/spotify_token.json` | Step 3 finishes without a traceback (it may list tracks it did or did not find on Spotify). Step 4 shows `-rw-------`. Step 5 shows a new token instead of `expired`, proving the file was re-saved. Before the fix, step 4 still shows `-rw-r--r--`. |
 
@@ -149,9 +149,11 @@ Run on macOS, Linux or WSL only. These tests need internet access.
 | AT-1.3 | Chizorom Anyalechi | 2026-10-27 | Listed tracks 1, 2 and 3 | Pass |
 | AT-1.4 | Chizorom Anyalechi | 2026-10-27 | Printed nothing, no error | Pass |
 | AT-1.5 | Chizorom Anyalechi | 2026-10-27 | `invalid query: 'genres::[': '[' is not a regular expression: unterminated character set at position 0`, no traceback | Pass |
-| AT-2.1 | | | | |
-| AT-2.2 | | | | |
-| AT-2.3 | | | | |
-| AT-2.4 | | | | |
-| AT-2.5 | | | | |
-| AT-2.6 | | | | |
+| AT-2.1 | Chizorom Anyalechi | 2026-10-27 | Version printed; token file `-rw-------` | Pass |
+| AT-2.2 | Chizorom Anyalechi | 2026-10-27 | `600`, modification time unchanged after second run | Pass |
+| AT-2.3 | Chizorom Anyalechi | 2026-10-27 | `-rw-------` with umask 000 | Pass |
+| AT-2.4 | Chizorom Anyalechi | 2026-10-27 | Plugin load error ending `Spotify authorization failed ... Invalid client secret`; version still printed; no token file | Pass |
+| AT-2.5 | Chizorom Anyalechi | 2026-10-27 | `0` (token not in debug log) | Pass |
+| AT-2.6 | Chizorom Anyalechi | 2026-10-27 | `-rw-------`; file holds a new token instead of `expired` | Pass |
+
+Part B was run on Windows 11 (PowerShell, Python 3.11). Part C was run on Ubuntu under WSL, on a fresh copy in the Linux home folder.
