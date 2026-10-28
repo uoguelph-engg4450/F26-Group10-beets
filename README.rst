@@ -1,3 +1,15 @@
+.. note::
+
+    **ENGG\*4450 Group 10, Assignment 2:** the release to mark is the tag
+    ``v2.14.1-g10-a2``. It contains our fixes for beets issues #6961 and #6984.
+    To get it::
+
+        git clone https://github.com/uoguelph-engg4450/F26-Group10-beets.git
+        cd F26-Group10-beets
+        git checkout v2.14.1-g10-a2
+
+    Group details are in ``ENGG4450-GROUP-INFO.md``.
+
 .. image:: https://img.shields.io/pypi/v/beets.svg
     :target: https://pypi.python.org/pypi/beets
 
