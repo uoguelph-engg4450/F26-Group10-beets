@@ -9,9 +9,16 @@ below!
 Unreleased
 ----------
 
-..
-    New features
-    ~~~~~~~~~~~~
+New features
+~~~~~~~~~~~~
+
+- :doc:`plugins/lyrics`: Choose the translation service with the new
+  ``translate.provider`` option (``azure``, the default, or ``deepl``). An
+  incomplete or invalid translation configuration now logs a warning that names
+  the problem instead of silently turning translation off. Translation errors
+  (a rejected API key, a used up quota, an unsupported language or a network
+  problem) are reported clearly, and the lyrics are still saved untranslated.
+  :bug:`5646`
 
 Bug fixes
 ~~~~~~~~~
