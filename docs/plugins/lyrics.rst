@@ -92,10 +92,12 @@ The available options are:
 
 - **translate**:
 
-  - **api_key**: Api key to access your Azure Translator resource. (see
-    :ref:`lyrics-translation`)
+  - **provider**: The translation service to use, ``azure`` or ``deepl``. Not
+    case-sensitive. Default: ``azure``. (see :ref:`lyrics-translation`)
+  - **api_key**: API key of your Azure Translator resource or of your DeepL
+    account. (see :ref:`lyrics-translation`)
   - **from_languages**: By default all lyrics with a language other than
-    ``translate_to`` are translated. Use a list of language codes to restrict
+    ``to_language`` are translated. Use a list of language codes to restrict
     them.
   - **to_language**: Language code to translate lyrics to.
 
@@ -235,8 +237,54 @@ that, the lyrics plugin will fall back on other declared data sources.
 Activate On-the-Fly Translation
 -------------------------------
 
-We use Azure to optionally translate your lyrics. To set up the integration,
-follow these steps:
+The plugin can translate the lyrics it fetches. Each line is followed by its
+translation, and the language is stored in ``lyrics_translation_language``.
+Choose the translation service with the ``translate.provider`` option:
+
+- ``azure``: Azure AI Translator. This is the default, so existing
+  configurations keep working without changes.
+- ``deepl``: DeepL, which has a free plan.
+
+Translation is off until both ``translate.api_key`` and
+``translate.to_language`` are set. Lyrics that are already in the target
+language are left as they are.
+
+Translate with DeepL
+~~~~~~~~~~~~~~~~~~~~
+
+1. Sign up for DeepL API access on the `DeepL website`_. The free plan is enough
+   to try the feature.
+2. Copy your authentication key from the *API keys* page of your DeepL account.
+   Keys of the free plan end in ``:fx``; the plugin uses the free or the paid
+   DeepL server to match your key.
+3. Set the provider, key and target language in your configuration:
+
+   .. code-block:: yaml
+
+       lyrics:
+         translate:
+           provider: deepl
+           api_key: YOUR_DEEPL_API_KEY
+           to_language: de
+           from_languages: [en]
+
+4. Fetch lyrics as usual, for example with ``beet lyrics -f QUERY`` to fetch
+   them again for tracks that already have lyrics. Lyrics are only translated
+   when they are fetched.
+
+You should expect lyrics like this:
+
+::
+
+    Original verse / Ursprünglicher Vers
+    Some other verse / Ein anderer Vers
+
+``beet config`` shows ``api_key`` as ``REDACTED``, so you can share its output
+without leaking your key. See DeepL's `list of supported languages`_ for the
+codes that ``to_language`` accepts.
+
+Translate with Azure
+~~~~~~~~~~~~~~~~~~~~
 
 1. `Create a Translator resource`_ on Azure.
        Make sure the region of the translator resource is set to Global. You
@@ -262,6 +310,58 @@ You should expect lyrics like this:
     Original verse / Ursprünglicher Vers
     Some other verse / Ein anderer Vers
 
+``provider: azure`` is the default and can be left out.
+
+When translation fails
+~~~~~~~~~~~~~~~~~~~~~~
+
+A translation problem never stops the plugin from fetching lyrics. The plugin
+logs a warning that says what to fix, and the lyrics are saved without a
+translation. The warnings start with the name of the plugin, for example
+``lyrics:``.
+
+.. list-table::
+    :header-rows: 1
+    :widths: 22 48 30
+
+    - - Problem
+      - What you see
+      - What to do
+    - - Setting missing
+      - ``Translation is switched off: translate.api_key is not set.`` (or
+        ``translate.to_language``, or both)
+      - Add the missing option.
+    - - Unknown provider
+      - ``Translation is switched off: unknown translate.provider 'x'. Choose
+        one of: azure, deepl.``
+      - Use ``azure`` or ``deepl``.
+    - - API key rejected
+      - ``The API key was rejected. Check translate.api_key.``
+      - Copy the key again. For DeepL, make sure it is an API key.
+    - - Quota used up
+      - ``The translation quota is used up. Wait for it to reset or use a
+        different API key.``
+      - Wait for the quota to reset, or use another key.
+    - - Language not supported
+      - ``The language is not supported. Check translate.to_language and
+        translate.from_languages.``
+      - Use a language code that your provider supports.
+    - - Network problem
+      - ``Could not reach DeepL: ... Lyrics are saved untranslated.``
+      - Check your connection and fetch the lyrics again.
+
+After a rejected key, a used up quota or an unsupported language, every further
+request would fail the same way. The plugin therefore warns once and stops
+translating until you restart beets. A network problem only affects the track it
+happened on, and the next track is tried again.
+
+To translate the lyrics that were saved without a translation, fix the problem
+and run ``beet lyrics -f QUERY``.
+
 .. _create a translator resource: https://learn.microsoft.com/en-us/azure/ai-services/translator/create-translator-resource
+
+.. _deepl website: https://www.deepl.com/pro-api
+
+.. _list of supported languages: https://developers.deepl.com/docs/getting-started/supported-languages
 
 .. _obtain its api key: https://learn.microsoft.com/en-us/python/api/overview/azure/ai-translation-text-readme?view=azure-python&preserve-view=true#get-an-api-key

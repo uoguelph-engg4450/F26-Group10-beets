@@ -9,21 +9,28 @@ below!
 Unreleased
 ----------
 
-..
-    New features
-    ~~~~~~~~~~~~
+New features
+~~~~~~~~~~~~
+
+- :doc:`plugins/lyrics`: Choose the translation service with the new
+  ``translate.provider`` option (``azure``, the default, or ``deepl``). An
+  incomplete or invalid translation configuration now logs a warning that names
+  the problem instead of silently turning translation off. Translation errors (a
+  rejected API key, a used up quota, an unsupported language or a network
+  problem) are reported clearly, and the lyrics are still saved untranslated.
+  :bug:`5646`
 
 Bug fixes
 ~~~~~~~~~
 
 - Add ``alternatives.item_updated`` to the typed event list so
   :doc:`plugins/hook` can listen to it. :bug:`7036`
-- Regular expression queries on multi-valued fields such as ``genres`` now
-  match each value separately, so ``beet ls 'genres::^Electro$'`` finds tracks
-  whose genres include ``Electro``. :bug:`6961`
-- :doc:`plugins/spotify` and :doc:`plugins/beatport`: Save the OAuth token
-  files with owner-only permissions (``0600``) and stop writing the tokens to
-  the debug log. :bug:`6984`
+- Regular expression queries on multi-valued fields such as ``genres`` now match
+  each value separately, so ``beet ls 'genres::^Electro$'`` finds tracks whose
+  genres include ``Electro``. :bug:`6961`
+- :doc:`plugins/spotify` and :doc:`plugins/beatport`: Save the OAuth token files
+  with owner-only permissions (``0600``) and stop writing the tokens to the
+  debug log. :bug:`6984`
 
 ..
     For plugin developers
