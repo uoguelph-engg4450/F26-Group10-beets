@@ -25,12 +25,12 @@ Bug fixes
 
 - Add ``alternatives.item_updated`` to the typed event list so
   :doc:`plugins/hook` can listen to it. :bug:`7036`
-- Regular expression queries on multi-valued fields such as ``genres`` now
-  match each value separately, so ``beet ls 'genres::^Electro$'`` finds tracks
-  whose genres include ``Electro``. :bug:`6961`
-- :doc:`plugins/spotify` and :doc:`plugins/beatport`: Save the OAuth token
-  files with owner-only permissions (``0600``) and stop writing the tokens to
-  the debug log. :bug:`6984`
+- Regular expression queries on multi-valued fields such as ``genres`` now match
+  each value separately, so ``beet ls 'genres::^Electro$'`` finds tracks whose
+  genres include ``Electro``. :bug:`6961`
+- :doc:`plugins/spotify` and :doc:`plugins/beatport`: Save the OAuth token files
+  with owner-only permissions (``0600``) and stop writing the tokens to the
+  debug log. :bug:`6984`
 
 ..
     For plugin developers
