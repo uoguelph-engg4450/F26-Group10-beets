@@ -7,9 +7,10 @@ import math
 import re
 import textwrap
 from contextlib import contextmanager, suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cached_property, partial, total_ordering
 from html import unescape
+from http import HTTPStatus
 from itertools import filterfalse, groupby
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, Protocol
@@ -17,7 +18,7 @@ from urllib.parse import quote, quote_plus, urlencode, urlparse
 
 import requests
 from bs4 import BeautifulSoup
-from confuse import Optional
+from confuse import ConfigError, Optional
 from unidecode import unidecode
 
 from beets import plugins, ui
@@ -66,6 +67,45 @@ class CaptchaError(requests.exceptions.HTTPError):
 
 class GeniusHTTPError(requests.exceptions.HTTPError):
     pass
+
+
+class TranslatorHTTPError(requests.exceptions.HTTPError):
+    """A translation service failure with a message meant for the user.
+
+    Translation providers raise (a subclass of) this error for failures that
+    the user can act on. ``Translator.handle_request`` turns it into a warning
+    and the lyrics are saved untranslated.
+    """
+
+    #: What went wrong and what the user should check.
+    MESSAGE: ClassVar[str] = "The translation service returned an error."
+    #: Whether every further request in this run would fail the same way, in
+    #: which case translation is switched off until beets is restarted.
+    FATAL: ClassVar[bool] = False
+
+    def __init__(self, message: str | None = None, **kwargs) -> None:
+        super().__init__(message or self.MESSAGE, **kwargs)
+
+
+class InvalidAPIKeyError(TranslatorHTTPError):
+    MESSAGE = "The API key was rejected. Check translate.api_key."
+    FATAL = True
+
+
+class QuotaExceededError(TranslatorHTTPError):
+    MESSAGE = (
+        "The translation quota is used up. Wait for it to reset or use a"
+        " different API key."
+    )
+    FATAL = True
+
+
+class UnsupportedLanguageError(TranslatorHTTPError):
+    MESSAGE = (
+        "The language is not supported. Check translate.to_language and"
+        " translate.from_languages."
+    )
+    FATAL = True
 
 
 # Utilities.
@@ -864,15 +904,42 @@ class Google(SearchBackend):
 
 @dataclass
 class Translator(LyricsRequestHandler):
-    """Translate lyrics text while preserving existing structured metadata."""
+    """Translate lyrics text while preserving existing structured metadata.
+
+    This class is the Azure Translator provider. Another provider is added by
+    subclassing it and
+
+    * overriding :meth:`get_translations` to call the service,
+    * setting :attr:`SERVICE` to the name shown in messages,
+    * setting :attr:`ERROR_BY_STATUS` to map the service's HTTP status codes
+      to :class:`TranslatorHTTPError` subclasses (raise
+      :class:`UnsupportedLanguageError` directly for a language the service
+      does not support),
+    * registering the class in ``TRANSLATOR_BY_NAME``, which makes it
+      selectable with the ``translate.provider`` option.
+
+    Failures never abort fetching lyrics: :meth:`handle_request` logs a
+    warning and the lyrics are saved untranslated.
+    """
 
     TRANSLATE_URL = "https://api.cognitive.microsofttranslator.com/translate"
     SEPARATOR = " | "
+
+    #: Name of the service, used in messages.
+    SERVICE: ClassVar[str] = "Azure Translator"
+    #: Errors to raise for the HTTP status codes of the service.
+    ERROR_BY_STATUS: ClassVar[dict[int, type[TranslatorHTTPError]]] = {
+        HTTPStatus.UNAUTHORIZED: InvalidAPIKeyError,
+        HTTPStatus.FORBIDDEN: QuotaExceededError,
+    }
 
     _log: Logger
     api_key: str
     to_language: str
     from_languages: list[str]
+    #: Set once a request failed in a way that every further request would
+    #: fail too (bad key, used up quota, unsupported language).
+    disabled: bool = field(default=False, init=False)
 
     @classmethod
     def from_config(
@@ -889,6 +956,83 @@ class Translator(LyricsRequestHandler):
             to_language.upper(),
             [x.upper() for x in from_languages or []],
         )
+
+    def classify_error(
+        self, response: requests.Response
+    ) -> type[TranslatorHTTPError] | None:
+        """Return the error to raise for a failed response, if it is known."""
+        if error := self.ERROR_BY_STATUS.get(response.status_code):
+            return error
+
+        # Azure and DeepL both answer an unsupported language with a bad
+        # request that names the language or the language parameter.
+        if (
+            response.status_code == HTTPStatus.BAD_REQUEST
+            and "lang" in response.text.lower()
+        ):
+            return UnsupportedLanguageError
+
+        return None
+
+    def request(self, *args, **kwargs) -> requests.Response:
+        """Send a request and raise user-facing errors for known failures."""
+        try:
+            return super().request(*args, **kwargs)
+        except requests.HTTPError as exc:
+            # A failed response is falsy, so compare with None.
+            if exc.response is not None and (
+                error := self.classify_error(exc.response)
+            ):
+                raise error(response=exc.response) from exc
+            raise
+
+    @contextmanager
+    def handle_request(self) -> Iterator[None]:
+        """Log a warning for a failed translation instead of raising.
+
+        The lyrics are kept in every case and saved without a translation.
+        """
+        try:
+            yield
+        except TranslatorHTTPError as exc:
+            if exc.FATAL:
+                self.disabled = True
+                self.warn(
+                    "{} Lyrics are saved untranslated, and translation stays"
+                    " off until beets is restarted.",
+                    exc,
+                )
+            else:
+                self.warn("{} Lyrics are saved untranslated.", exc)
+        except requests.exceptions.RetryError:
+            self.warn(
+                "{} is busy or unavailable. Lyrics are saved untranslated.",
+                self.SERVICE,
+            )
+        except (requests.ConnectionError, requests.Timeout) as exc:
+            self.warn(
+                "Could not reach {}: {}. Lyrics are saved untranslated.",
+                self.SERVICE,
+                exc,
+            )
+        except (
+            requests.JSONDecodeError,
+            KeyError,
+            IndexError,
+            TypeError,
+        ) as exc:
+            self.debug("Unexpected response: {!r}", exc)
+            self.warn(
+                "{} sent a response that could not be understood. Lyrics are"
+                " saved untranslated.",
+                self.SERVICE,
+            )
+        except requests.RequestException as exc:
+            self.warn(
+                "Translation request failed: {}. Lyrics are saved"
+                " untranslated.",
+                exc,
+            )
 
     def get_translations(self, texts: Iterable[str]) -> list[str]:
         """Return translations for the given texts.
@@ -939,6 +1083,8 @@ class Translator(LyricsRequestHandler):
                 from_lang_config,
                 lyrics_language,
             )
+        elif self.disabled:
+            self.debug("Translation is switched off, skipping")
         else:
             with self.handle_request():
                 lyrics.translations = self.get_translations(lyrics.text_lines)
@@ -1076,6 +1222,10 @@ BACKEND_BY_NAME = {
     b.name: b for b in [LRCLib, Google, Genius, Tekstowo, MusiXmatch, LRCMux]
 }
 
+#: Translation providers that can be chosen with ``translate.provider``.
+TRANSLATOR_BY_NAME: dict[str, type[Translator]] = {"azure": Translator}
+DEFAULT_TRANSLATOR = "azure"
+
 
 class LyricsPlugin(LyricsRequestHandler, plugins.BeetsPlugin):
     item_types: ClassVar[dict[str, types.Type]] = {
@@ -1099,10 +1249,59 @@ class LyricsPlugin(LyricsRequestHandler, plugins.BeetsPlugin):
 
     @cached_property
     def translator(self) -> Translator | None:
+        """Return the translator chosen in the configuration.
+
+        Translation stays off when ``translate`` is not configured. A
+        configuration that is incomplete or invalid does not stop the plugin:
+        it logs a warning that names the problem and turns translation off, so
+        lyrics are still fetched.
+        """
         config = self.config["translate"]
-        if config["api_key"].get() and config["to_language"].get():
-            return Translator.from_config(self._log, **config.flatten())
-        return None
+        try:
+            provider = (
+                (config["provider"].get(str) or DEFAULT_TRANSLATOR)
+                .strip()
+                .lower()
+            )
+            from_languages = config["from_languages"].as_str_seq()
+        except ConfigError as exc:
+            self.warn("Translation is switched off: {}", exc)
+            return None
+
+        api_key = str(config["api_key"].get() or "").strip()
+        to_language = str(config["to_language"].get() or "").strip()
+
+        # Existing users who never set up translation get no warning.
+        if not (api_key or to_language or provider != DEFAULT_TRANSLATOR):
+            return None
+
+        if provider not in TRANSLATOR_BY_NAME:
+            self.warn(
+                "Translation is switched off: unknown translate.provider"
+                " {!r}. Choose one of: {}.",
+                provider,
+                ", ".join(sorted(TRANSLATOR_BY_NAME)),
+            )
+            return None
+
+        if missing := [
+            f"translate.{name}"
+            for name, value in (
+                ("api_key", api_key),
+                ("to_language", to_language),
+            )
+            if not value
+        ]:
+            self.warn(
+                "Translation is switched off: {} {} not set.",
+                " and ".join(missing),
+                "is" if len(missing) == 1 else "are",
+            )
+            return None
+
+        return TRANSLATOR_BY_NAME[provider].from_config(
+            self._log, api_key, to_language, from_languages
+        )
 
     def __init__(self) -> None:
         super().__init__()
@@ -1111,6 +1310,7 @@ class LyricsPlugin(LyricsRequestHandler, plugins.BeetsPlugin):
                 "auto": True,
                 "auto_ignore": None,
                 "translate": {
+                    "provider": DEFAULT_TRANSLATOR,
                     "api_key": None,
                     "from_languages": [],
                     "to_language": None,
@@ -1197,6 +1397,8 @@ class LyricsPlugin(LyricsRequestHandler, plugins.BeetsPlugin):
             # The "write to files" option corresponds to the
             # import_write config value.
             self.config.set(vars(opts))
+            # Report a translation configuration problem before fetching.
+            self.translator
             items = list(lib.items(args))
             for item in items:
                 self.add_item_lyrics(item, ui.should_write())
